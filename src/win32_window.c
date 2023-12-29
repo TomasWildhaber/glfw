@@ -36,6 +36,7 @@
 #include <string.h>
 #include <windowsx.h>
 #include <shellapi.h>
+#include <stdio.h>
 
 // Returns the window style for the specified window
 //
@@ -529,22 +530,62 @@ static void maximizeWindowManually(_GLFWwindow* window)
 //
 static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+    static RECT border_thickness = { 4, 4, 4, 4 };
+    BOOL hasThickFrame = GetWindowLongPtr(hWnd, GWL_STYLE) & WS_THICKFRAME;
+
     _GLFWwindow* window = GetPropW(hWnd, L"GLFW");
     if (!window)
     {
-        if (uMsg == WM_NCCREATE)
+        switch (uMsg)
         {
-            if (_glfwIsWindows10Version1607OrGreaterWin32())
+            case WM_NCCREATE:
             {
-                const CREATESTRUCTW* cs = (const CREATESTRUCTW*) lParam;
-                const _GLFWwndconfig* wndconfig = cs->lpCreateParams;
+                if (_glfwIsWindows10Version1607OrGreaterWin32())
+                {
+                    const CREATESTRUCTW* cs = (const CREATESTRUCTW*)lParam;
+                    const _GLFWwndconfig* wndconfig = cs->lpCreateParams;
 
-                // On per-monitor DPI aware V1 systems, only enable
-                // non-client scaling for windows that scale the client area
-                // We need WM_GETDPISCALEDSIZE from V2 to keep the client
-                // area static when the non-client area is scaled
-                if (wndconfig && wndconfig->scaleToMonitor)
-                    EnableNonClientDpiScaling(hWnd);
+                    // On per-monitor DPI aware V1 systems, only enable
+                    // non-client scaling for windows that scale the client area
+                    // We need WM_GETDPISCALEDSIZE from V2 to keep the client
+                    // area static when the non-client area is scaled
+                    if (wndconfig && wndconfig->scaleToMonitor)
+                        EnableNonClientDpiScaling(hWnd);
+                }
+            }
+
+            case WM_CREATE:
+            {
+                if (!_glfw.hints.window.customTitleBar)
+                    break;
+
+                if (hasThickFrame)
+                {
+                    RECT size_rect;
+                    GetWindowRect(hWnd, &size_rect);
+
+                    // Inform the application of the frame change to force redrawing with the new
+                    // client area that is extended into the title bar
+                    SetWindowPos(
+                        hWnd, NULL,
+                        size_rect.left, size_rect.top,
+                        size_rect.right - size_rect.left, size_rect.bottom - size_rect.top,
+                        SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE
+                    );
+                    break;
+                }
+
+                break;
+            }
+
+            case WM_ACTIVATE:
+            {
+                if (!_glfw.hints.window.customTitleBar)
+                    break;
+
+                RECT title_bar_rect = { 0 };
+                InvalidateRect(hWnd, &title_bar_rect, FALSE);
+                break;
             }
         }
 
@@ -997,6 +1038,28 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             break;
         }
 
+        case WM_NCCALCSIZE:
+        {
+            if (!window->customTitleBar || !hasThickFrame)
+                break;
+
+            if (wParam == TRUE && lParam != NULL)
+            {
+                const int resizeBorderX = GetSystemMetrics(SM_CXFRAME);
+                const int resizeBorderY = GetSystemMetrics(SM_CYFRAME);
+
+                NCCALCSIZE_PARAMS* params = (NCCALCSIZE_PARAMS*)lParam;
+                RECT* requestedClientRect = params->rgrc;
+
+                requestedClientRect->right -= window->win32.maximized ? 8 : resizeBorderX;
+                requestedClientRect->left += window->win32.maximized ? 8 : resizeBorderX;
+                requestedClientRect->bottom -= window->win32.maximized ? 8 : resizeBorderY;
+                requestedClientRect->top += window->win32.maximized ? 8 : 0;
+            }
+
+            return 0;
+        }
+
         case WM_SIZE:
         {
             const int width = LOWORD(lParam);
@@ -1037,6 +1100,17 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
             window->win32.iconified = iconified;
             window->win32.maximized = maximized;
+
+            RECT size_rect;
+            GetWindowRect(hWnd, &size_rect);
+
+            SetWindowPos(
+                hWnd, NULL,
+                size_rect.left, size_rect.top,
+                size_rect.right - size_rect.left, size_rect.bottom - size_rect.top,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE
+            );
+
             return 0;
         }
 
@@ -1241,6 +1315,59 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 
             DragFinish(drop);
             return 0;
+        }
+
+        case WM_ACTIVATE:
+        {
+            if (!_glfw.hints.window.customTitleBar)
+                break;
+
+            RECT title_bar_rect = { 0 };
+            InvalidateRect(hWnd, &title_bar_rect, FALSE);
+
+            break;
+        }
+
+        case WM_NCHITTEST:
+        {
+            if (!_glfw.hints.window.customTitleBar)
+                break;
+
+            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ScreenToClient(hWnd, &pt);
+
+            if (!window->win32.maximized)
+            {
+                RECT rect;
+                GetClientRect(hWnd, &rect);
+
+                enum { left = 1, top = 2, right = 4, bottom = 8 };
+                int hit = 0;
+                if (pt.x <= border_thickness.left)
+                    hit |= left;
+                if (pt.x >= rect.right - border_thickness.right)
+                    hit |= right;
+                if (pt.y <= border_thickness.top)
+                    hit |= top;
+                if (pt.y >= rect.bottom - border_thickness.bottom)
+                    hit |= bottom;
+
+                if (hit & top && hit & left)        return HTTOPLEFT;
+                if (hit & top && hit & right)       return HTTOPRIGHT;
+                if (hit & bottom && hit & left)     return HTBOTTOMLEFT;
+                if (hit & bottom && hit & right)    return HTBOTTOMRIGHT;
+                if (hit & left)                     return HTLEFT;
+                if (hit & top)                      return HTTOP;
+                if (hit & right)                    return HTRIGHT;
+                if (hit & bottom)                   return HTBOTTOM;
+            }
+
+            int titlebarHittest = 0;
+            _glfwInputTitleBarHitTest(window, pt.x, pt.y, &titlebarHittest);
+            if (titlebarHittest)
+                return HTCAPTION;
+
+            return HTCLIENT;
         }
     }
 
@@ -1937,6 +2064,11 @@ void _glfwSetWindowResizableWin32(_GLFWwindow* window, GLFWbool enabled)
 }
 
 void _glfwSetWindowDecoratedWin32(_GLFWwindow* window, GLFWbool enabled)
+{
+    updateWindowStyles(window);
+}
+
+void _glfwSetWindowTitlebarWin32(_GLFWwindow* window, GLFWbool enabled)
 {
     updateWindowStyles(window);
 }

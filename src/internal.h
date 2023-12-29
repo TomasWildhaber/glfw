@@ -399,6 +399,7 @@ struct _GLFWwndconfig
     const char*   title;
     GLFWbool      resizable;
     GLFWbool      visible;
+    GLFWbool      customTitleBar;
     GLFWbool      decorated;
     GLFWbool      focused;
     GLFWbool      autoIconify;
@@ -526,6 +527,7 @@ struct _GLFWwindow
 
     // Window settings and state
     GLFWbool            resizable;
+    GLFWbool            customTitleBar;
     GLFWbool            decorated;
     GLFWbool            autoIconify;
     GLFWbool            floating;
@@ -555,23 +557,24 @@ struct _GLFWwindow
     _GLFWcontext        context;
 
     struct {
-        GLFWwindowposfun          pos;
-        GLFWwindowsizefun         size;
-        GLFWwindowclosefun        close;
-        GLFWwindowrefreshfun      refresh;
-        GLFWwindowfocusfun        focus;
-        GLFWwindowiconifyfun      iconify;
-        GLFWwindowmaximizefun     maximize;
-        GLFWframebuffersizefun    fbsize;
-        GLFWwindowcontentscalefun scale;
-        GLFWmousebuttonfun        mouseButton;
-        GLFWcursorposfun          cursorPos;
-        GLFWcursorenterfun        cursorEnter;
-        GLFWscrollfun             scroll;
-        GLFWkeyfun                key;
-        GLFWcharfun               character;
-        GLFWcharmodsfun           charmods;
-        GLFWdropfun               drop;
+        GLFWwindowposfun            pos;
+        GLFWwindowsizefun           size;
+        GLFWwindowclosefun          close;
+        GLFWwindowrefreshfun        refresh;
+        GLFWwindowfocusfun          focus;
+        GLFWtitlebarhittestfun      titlebarhittest;
+        GLFWwindowiconifyfun        iconify;
+        GLFWwindowmaximizefun       maximize;
+        GLFWframebuffersizefun      fbsize;
+        GLFWwindowcontentscalefun   scale;
+        GLFWmousebuttonfun          mouseButton;
+        GLFWcursorposfun            cursorPos;
+        GLFWcursorenterfun          cursorEnter;
+        GLFWscrollfun               scroll;
+        GLFWkeyfun                  key;
+        GLFWcharfun                 character;
+        GLFWcharmodsfun             charmods;
+        GLFWdropfun                 drop;
     } callbacks;
 
     // This is defined in platform.h
@@ -742,6 +745,9 @@ struct _GLFWplatform
     void (*waitEvents)(void);
     void (*waitEventsTimeout)(double);
     void (*postEmptyEvent)(void);
+
+    void (*setWindowTitleBar)(_GLFWwindow*, GLFWbool);
+
     // EGL
     EGLenum (*getEGLPlatform)(EGLint**);
     EGLNativeDisplayType (*getEGLNativeDisplay)(void);
@@ -909,6 +915,7 @@ GLFWproc _glfwPlatformGetModuleSymbol(void* module, const char* name);
 void _glfwInputWindowFocus(_GLFWwindow* window, GLFWbool focused);
 void _glfwInputWindowPos(_GLFWwindow* window, int xpos, int ypos);
 void _glfwInputWindowSize(_GLFWwindow* window, int width, int height);
+void _glfwInputTitleBarHitTest(_GLFWwindow* window, int posX, int posY, int* hit);
 void _glfwInputFramebufferSize(_GLFWwindow* window, int width, int height);
 void _glfwInputWindowContentScale(_GLFWwindow* window,
                                   float xscale, float yscale);
@@ -1009,4 +1016,3 @@ float _glfw_fmaxf(float a, float b);
 void* _glfw_calloc(size_t count, size_t size);
 void* _glfw_realloc(void* pointer, size_t size);
 void _glfw_free(void* pointer);
-
