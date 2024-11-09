@@ -100,3 +100,20 @@ tests/triangle-vulkan
 tests/window
 tests/windows
 
+# Premake
+# project output folders
+bin/
+bin-int/
+
+# visual studio files
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# make files
+Makefile
+
+# visual studip code files
+.vscode
